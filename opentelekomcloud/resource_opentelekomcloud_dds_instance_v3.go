@@ -2,6 +2,7 @@ package opentelekomcloud
 
 import (
 	"fmt"
+	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
@@ -174,12 +175,12 @@ func resourceDdsInstanceV3() *schema.Resource {
 
 func resourceDdsDataStore(d *schema.ResourceData) instances.DataStore {
 	var dataStore instances.DataStore
-	datastoreRaw := d.Get("datastore").([]interface{})
-	log.Printf("[DEBUG] datastoreRaw: %+v", datastoreRaw)
-	if len(datastoreRaw) == 1 {
-		dataStore.Type = datastoreRaw[0].(map[string]interface{})["type"].(string)
-		dataStore.Version = datastoreRaw[0].(map[string]interface{})["version"].(string)
-		dataStore.StorageEngine = datastoreRaw[0].(map[string]interface{})["storage_engine"].(string)
+	dataStoreRaw := d.Get("datastore").([]interface{})
+	log.Printf("[DEBUG] dataStoreRaw: %+v", dataStoreRaw)
+	if len(dataStoreRaw) == 1 {
+		dataStore.Type = dataStoreRaw[0].(map[string]interface{})["type"].(string)
+		dataStore.Version = dataStoreRaw[0].(map[string]interface{})["version"].(string)
+		dataStore.StorageEngine = dataStoreRaw[0].(map[string]interface{})["storage_engine"].(string)
 	}
 	log.Printf("[DEBUG] datastore: %+v", dataStore)
 	return dataStore
@@ -237,14 +238,14 @@ func DdsInstanceStateRefreshFunc(client *golangsdk.ServiceClient, instanceID str
 			var instance instances.InstanceResponse
 			return instance, "deleted", nil
 		}
-		insts := instancesList.Instances
+		ddsInstances := instancesList.Instances
 
-		status := insts[0].Status
+		status := ddsInstances[0].Status
 		// wait for updating
-		if status == "normal" && len(insts[0].Actions) > 0 {
+		if status == "normal" && len(ddsInstances[0].Actions) > 0 {
 			status = "updating"
 		}
-		return insts[0], status, nil
+		return ddsInstances[0], status, nil
 	}
 }
 
@@ -299,7 +300,7 @@ func resourceDdsInstanceV3Read(d *schema.ResourceData, meta interface{}) error {
 	config := meta.(*Config)
 	client, err := config.ddsV3Client(GetRegion(d, config))
 	if err != nil {
-		return fmt.Errorf("Error creating OpenTelekomCloud DDS client: %s", err)
+		return fmt.Errorf("error creating OpenTelekomCloud DDS client: %s", err)
 	}
 
 	instanceID := d.Id()
@@ -308,37 +309,42 @@ func resourceDdsInstanceV3Read(d *schema.ResourceData, meta interface{}) error {
 	}
 	allPages, err := instances.List(client, &opts).AllPages()
 	if err != nil {
-		return fmt.Errorf("Error fetching DDS instance: %s", err)
+		return fmt.Errorf("error fetching DDS instance: %s", err)
 	}
-	instances, err := instances.ExtractInstances(allPages)
+	ddsInstancesPage, err := instances.ExtractInstances(allPages)
 	if err != nil {
-		return fmt.Errorf("Error extracting DDS instance: %s", err)
+		return fmt.Errorf("error extracting DDS instance: %s", err)
 	}
-	if instances.TotalCount == 0 {
-		return fmt.Errorf("Error fetching DDS instance: deleted")
+	if ddsInstancesPage.TotalCount == 0 {
+		return fmt.Errorf("error fetching DDS instance: deleted")
 	}
-	insts := instances.Instances
-	instance := insts[0]
+	ddsInstances := ddsInstancesPage.Instances
+	instance := ddsInstances[0]
 
 	log.Printf("[DEBUG] Retrieved instance %s: %#v", instanceID, instance)
 
-	d.Set("region", instance.Region)
-	d.Set("name", instance.Name)
-	d.Set("vpc_id", instance.VpcId)
-	d.Set("subnet_id", instance.SubnetId)
-	d.Set("security_group_id", instance.SecurityGroupId)
-	d.Set("disk_encryption_id", instance.DiskEncryptionId)
-	d.Set("mode", instance.Mode)
-	d.Set("status", instance.Status)
+	me := &multierror.Error{}
+	me = multierror.Append(me,
+		d.Set("region", instance.Region),
+		d.Set("name", instance.Name),
+		d.Set("vpc_id", instance.VpcId),
+		d.Set("subnet_id", instance.SubnetId),
+		d.Set("security_group_id", instance.SecurityGroupId),
+		d.Set("disk_encryption_id", instance.DiskEncryptionId),
+		d.Set("mode", instance.Mode),
+		d.Set("status", instance.Status),
+	)
 
-	datastoreList := make([]map[string]interface{}, 0, 1)
-	datastore := map[string]interface{}{
+	dataStoreList := make([]map[string]interface{}, 0, 1)
+	dataStore := map[string]interface{}{
 		"type":           instance.DataStore.Type,
 		"version":        instance.DataStore.Version,
 		"storage_engine": instance.Engine,
 	}
-	datastoreList = append(datastoreList, datastore)
-	d.Set("datastore", datastoreList)
+	dataStoreList = append(dataStoreList, dataStore)
+	if err = d.Set("datastore", dataStoreList); err != nil {
+		return fmt.Errorf("[DEBUG] Error saving datastore to state for OpenTelekomCloud DDS Instance(%s): %s", d.Id(), err)
+	}
 
 	backupStrategyList := make([]map[string]interface{}, 0, 1)
 	backupStrategy := map[string]interface{}{
@@ -346,7 +352,9 @@ func resourceDdsInstanceV3Read(d *schema.ResourceData, meta interface{}) error {
 		"keep_days":  instance.BackupStrategy.KeepDays,
 	}
 	backupStrategyList = append(backupStrategyList, backupStrategy)
-	d.Set("backup_strategy", backupStrategyList)
+	if err = d.Set("backup_strategy", backupStrategyList); err != nil {
+		return fmt.Errorf("[DEBUG] Error saving backup_strategy to state for OpenTelekomCloud DDS Instance(%s): %s", d.Id(), err)
+	}
 
 	return nil
 }
@@ -434,9 +442,7 @@ func resourceDdsInstanceV3Delete(d *schema.ResourceData, meta interface{}) error
 
 	_, err = stateConf.WaitForState()
 	if err != nil {
-		return fmt.Errorf(
-			"Error waiting for instance (%s) to be deleted: %s ",
-			instanceId, err)
+		return fmt.Errorf("Error waiting for instance (%s) to be deleted: %s ", instanceId, err)
 	}
 	log.Printf("[DEBUG] Successfully deleted instance %s", instanceId)
 	return nil

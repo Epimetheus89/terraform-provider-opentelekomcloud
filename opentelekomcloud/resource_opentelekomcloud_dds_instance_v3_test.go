@@ -34,7 +34,7 @@ func testAccCheckDDSV3InstanceDestroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
 	client, err := config.ddsV3Client(OS_REGION_NAME)
 	if err != nil {
-		return fmt.Errorf("Error creating OpenTelekomCloud DDS client: %s", err)
+		return fmt.Errorf("error creating OpenTelekomCloud DDS client: %s", err)
 	}
 
 	for _, rs := range s.RootModule().Resources {
@@ -104,39 +104,42 @@ resource "opentelekomcloud_networking_secgroup_v2" "secgroup_acc" {
 }
 resource "opentelekomcloud_dds_instance_v3" "instance" {
   name = "dds-instance"
+
   datastore {
-    type = "DDS-Community"
-    version = "3.4"
+    type           = "DDS-Community"
+    version        = "3.4"
     storage_engine = "wiredTiger"
   }
-  region = "%s"
+
+  region            = "%s"
   availability_zone = "%s"
-  vpc_id = "%s"
-  subnet_id = "%s"
+  vpc_id            = "%s"
+  subnet_id         = "%s"
   security_group_id = opentelekomcloud_networking_secgroup_v2.secgroup_acc.id
-  password = "Test@123"
-  mode = "Sharding"
+  password          = "Test@123"
+  mode              = "Sharding"
+
   flavor {
-    type = "mongos"
-    num = 2
+    type      = "mongos"
+    num       = 2
     spec_code = "dds.mongodb.s2.medium.4.mongos"
   }
   flavor {
-    type = "shard"
-    num = 2
-    storage = "ULTRAHIGH"
-    size = 20
+    type      = "shard"
+    num       = 2
+    storage   = "ULTRAHIGH"
+    size      = 20
     spec_code = "dds.mongodb.s2.medium.4.shard"
   }
   flavor {
-    type = "config"
-    num = 1
-    storage = "ULTRAHIGH"
-    size = 20
+    type      = "config"
+    num       = 1
+    storage   = "ULTRAHIGH"
+    size      = 20
     spec_code = "dds.mongodb.s2.large.2.config"
   }
   backup_strategy {
     start_time = "08:00-09:00"
-    keep_days = "8"
+    keep_days  = "8"
   }
 }`, OS_REGION_NAME, OS_AVAILABILITY_ZONE, OS_VPC_ID, OS_NETWORK_ID)

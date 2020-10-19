@@ -12,32 +12,32 @@ import (
 )
 
 func TestAccRdsInstanceV3_basic(t *testing.T) {
-	name := acctest.RandString(5)
+	name := acctest.RandString(3)
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
 		Providers:    testAccProviders,
 		CheckDestroy: testAccCheckRdsInstanceV3Destroy,
 		Steps: []resource.TestStep{
-			{
-				Config: testAccRdsInstanceV3_basic(name),
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheckRdsInstanceV3Exists(),
-				),
-			},
 			//{
-			//	Config: testAccRdsInstanceV3_eip(name),
+			//	Config: testAccRdsInstanceV3_basic(name),
 			//	Check: resource.ComposeTestCheckFunc(
 			//		testAccCheckRdsInstanceV3Exists(),
-			//		resource.TestCheckResourceAttr("opentelekomcloud_rds_instance_v3.instance", "public_ips.#", "1"),
 			//	),
 			//},
 			{
-				Config: testAccRdsInstanceV3_update(name),
+				Config: testAccRdsInstanceV3_eip(name),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckRdsInstanceV3Exists(),
-					resource.TestCheckResourceAttr("opentelekomcloud_rds_instance_v3.instance", "public_ips.#", "0"),
+					resource.TestCheckResourceAttr("opentelekomcloud_rds_instance_v3.instance", "public_ips.#", "1"),
 				),
 			},
+			//{
+			//	Config: testAccRdsInstanceV3_update(name),
+			//	Check: resource.ComposeTestCheckFunc(
+			//		testAccCheckRdsInstanceV3Exists(),
+			//		resource.TestCheckResourceAttr("opentelekomcloud_rds_instance_v3.instance", "public_ips.#", "0"),
+			//	),
+			//},
 		},
 	})
 }
@@ -56,7 +56,7 @@ resource "opentelekomcloud_rds_instance_v3" "instance" {
     version = "10"
     port = "8635"
   }
-  name = "terraform_test_rds_instance%s"
+  name = "tf_rds_instance_%s"
   security_group_id  = opentelekomcloud_networking_secgroup_v2.sg.id
   subnet_id = "%s"
   vpc_id = "%s"
@@ -91,7 +91,7 @@ resource "opentelekomcloud_rds_instance_v3" "instance" {
     version = "9.5"
     port = "8635"
   }
-  name = "terraform_test_rds_instance%s"
+  name = "tf_rds_instance_%s"
   security_group_id  = opentelekomcloud_networking_secgroup_v2.sg.id
   subnet_id = "%s"
   vpc_id = "%s"
@@ -114,7 +114,7 @@ resource "opentelekomcloud_rds_instance_v3" "instance" {
 
 func testAccRdsInstanceV3_eip(val string) string {
 	return fmt.Sprintf(`
-resource "opentelekomcloud_compute_floatingip_v2" "ip" {}
+resource "opentelekomcloud_networking_floatingip_v2" "fip_1" {}
 
 resource opentelekomcloud_networking_secgroup_v2 sg {
   name = "sg-rds-test"
@@ -128,7 +128,7 @@ resource "opentelekomcloud_rds_instance_v3" "instance" {
     version = "9.5"
     port = "8635"
   }
-  name = "terraform_test_rds_instance%s"
+  name = "tf_rds_instance_%s"
   security_group_id  = opentelekomcloud_networking_secgroup_v2.sg.id
   subnet_id = "%s"
   vpc_id = "%s"
@@ -145,9 +145,9 @@ resource "opentelekomcloud_rds_instance_v3" "instance" {
     foo = "bar"
     key = "value"
   }
-  public_ips = [opentelekomcloud_compute_floatingip_v2.ip.address]
+  public_ips = [opentelekomcloud_networking_floatingip_v2.fip_1.address]
 }
-	`, OS_AVAILABILITY_ZONE, val, OS_NETWORK_ID, OS_VPC_ID)
+`, OS_AVAILABILITY_ZONE, val, OS_NETWORK_ID, OS_VPC_ID)
 }
 
 func testAccCheckRdsInstanceV3Destroy(s *terraform.State) error {

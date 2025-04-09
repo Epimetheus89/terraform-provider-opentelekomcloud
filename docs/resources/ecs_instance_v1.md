@@ -316,7 +316,7 @@ The `nics` block supports:
 
 The `metadata` block supports:
 
-* `agency_name` - (Optional) Association to an [agency](identity_agency_v3.md)
+* `agency_name` - (Optional, String) Association to an [agency](identity_agency_v3.md)
 
 The `data_disks` block supports:
 

@@ -125,10 +125,17 @@ func ResourceEcsInstanceV1() *schema.Resource {
 				},
 			},
 			"metadata": {
-				Type:     schema.TypeMap,
+				Type:     schema.TypeList,
 				Optional: true,
-				Elem: &schema.Schema{
-					Type: schema.TypeString,
+				Computed: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"agency_name": {
+							Type:     schema.TypeString,
+							Optional: true,
+						},
+					},
 				},
 			},
 			"system_disk_id": {
@@ -402,10 +409,13 @@ func resourceEcsInstanceV1Read(ctx context.Context, d *schema.ResourceData, meta
 		d.Set("volumes_attached", volumeList),
 	)
 
+	var metadata []map[string]interface{}
+	md := map[string]interface{}{
+		"agency_name": server.Metadata.AgencyName,
+	}
+	metadata = append(metadata, md)
 	mErr = multierror.Append(mErr,
-		d.Set("metadata", map[string]string{
-			"agency_name": server.Metadata.AgencyName,
-		}),
+		d.Set("metadata", metadata),
 	)
 
 	// Get the instance network and address information
@@ -499,21 +509,30 @@ func resourceEcsInstanceV1Update(ctx context.Context, d *schema.ResourceData, me
 	}
 
 	if d.HasChange("metadata") {
-		oldMetadata, newMetadata := d.GetChange("metadata")
+		oldMetadataRaw, newMetadataRaw := d.GetChange("metadata")
+		oldMetadata := oldMetadataRaw.([]interface{})
+		newMetadata := newMetadataRaw.([]interface{})
+
 		var metadataToDelete []string
 
 		// Determine if any metadata keys were removed from the configuration.
 		// Then request those keys to be deleted.
-		for oldKey := range oldMetadata.(map[string]interface{}) {
-			var found bool
-			for newKey := range newMetadata.(map[string]interface{}) {
-				if oldKey == newKey {
+		if len(oldMetadata) > 0 {
+			for oldKey := range oldMetadata[0].(map[string]interface{}) {
+				var found bool
+				if len(newMetadata) > 0 {
+					for newKey := range newMetadata[0].(map[string]interface{}) {
+						if oldKey == newKey {
+							found = true
+						}
+					}
+				} else {
 					found = true
 				}
-			}
 
-			if !found {
-				metadataToDelete = append(metadataToDelete, oldKey)
+				if !found {
+					metadataToDelete = append(metadataToDelete, oldKey)
+				}
 			}
 		}
 
@@ -526,8 +545,10 @@ func resourceEcsInstanceV1Update(ctx context.Context, d *schema.ResourceData, me
 
 		// Update existing metadata and add any new metadata.
 		metadataOpts := make(servers.MetadataOpts)
-		for k, v := range newMetadata.(map[string]interface{}) {
-			metadataOpts[k] = v.(string)
+		if len(newMetadata) > 0 {
+			for k, v := range newMetadata[0].(map[string]interface{}) {
+				metadataOpts[k] = v.(string)
+			}
 		}
 
 		_, err := servers.UpdateMetadata(client, d.Id(), metadataOpts).Extract()
@@ -745,13 +766,13 @@ func resourceInstanceSecGroupsV1(d *schema.ResourceData) []cloudservers.Security
 }
 
 func resourceInstanceMetadataV1(d *schema.ResourceData) *cloudservers.MetaData {
-	metaDatas, ok := d.Get("metadata").(map[string]string)
+	metaDatas, ok := d.Get("metadata").([]interface{})
 
 	var metaData cloudservers.MetaData
-	if ok && len(metaDatas) > 0 {
+	if ok && len(metaDatas) == 1 {
+		md := metaDatas[0].(map[string]interface{})
 		metaData = cloudservers.MetaData{
-			AdminPass:  metaDatas["admin_pass"],
-			AgencyName: metaDatas["agency_name"],
+			AgencyName: md["agency_name"].(string),
 		}
 	}
 	return &metaData

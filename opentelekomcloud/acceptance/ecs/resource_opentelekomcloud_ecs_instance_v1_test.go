@@ -791,7 +791,7 @@ resource "opentelekomcloud_identity_agency_v3" "agency" {
   delegated_domain_name = "op_svc_ecs"
   project_role {
     project = "%s"
-    roles   = [
+    roles = [
       "CES Administrator"
     ]
   }
